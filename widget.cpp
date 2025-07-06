@@ -1769,12 +1769,12 @@ void Widget::on_maxRpmSlider_valueChanged(int value) {
 
 void Widget::on_minRpmLineEdit_editingFinished() {
     ui->minRpmSlider->setValue(
-        (ui->minRpmLineEdit->text()).toInt());
+        (ui->minRpmLineEdit->text()).toInt() / 100);
 }
 
 void Widget::on_maxRpmLineEdit_editingFinished() {
     ui->maxRpmSlider->setValue(
-        (ui->maxRpmLineEdit->text()).toInt());
+        (ui->maxRpmLineEdit->text()).toInt() / 100);
 }
 
 void Widget::on_initMotor1_3_clicked() { on_initMotor1_clicked(); }
