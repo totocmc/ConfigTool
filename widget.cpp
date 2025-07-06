@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QTimerEvent>
 #include <QTextStream>
+#include <QDebug>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent), ui(new Ui::Widget), four_way(new FourWayIF),
@@ -208,12 +209,14 @@ void Widget::on_disconnectButton_clicked() {
 
 void Widget::readInitData() {
   QByteArray data = m_serial->readAll();
+
   if(data.size() != 0){
   qInfo("read data size next");
   if (data.size() > 21) {
     data.remove(0, 21);
   }
 
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< data.toHex();
   if (data[8] == (char)0x30) {
     if (data[4] == (char)0x2b) {
       qInfo("G071ESC_2KB_PAGE");
@@ -243,6 +246,7 @@ void Widget::readInitData() {
 void Widget::readData() {
 qInfo("reading");
   QByteArray data = m_serial->readAll();
+qDebug() << data;
 
 if(data.size() != 0){
   if (four_way->passthrough_started) {
@@ -553,18 +557,18 @@ void Widget::on_writeBinary_clicked() {
 
   four_way->ack_required = true;
   if(eeprom_buffer->size() != 0){
-  QByteArray eeprom_out;
-  for (int i = 0; i < 48; i++) {
-    eeprom_out.append(eeprom_buffer->at(i));
+      QByteArray eeprom_out(EEPROM_DATA_SIZE, 0);
+  for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
+    eeprom_out[i] = (eeprom_buffer->at(i));
   }
   eeprom_out[0] = 0x00;
 
   if (four_way->direct) {
 
-    sendDirect(eeprom_out, 48, four_way->eeprom_address);
+    sendDirect(eeprom_out, EEPROM_DATA_SIZE, four_way->eeprom_address);
     chunk_size = 128;
   } else {
-    writeData(four_way->makeFourWayWriteCommand(eeprom_out, 48,
+    writeData(four_way->makeFourWayWriteCommand(eeprom_out, EEPROM_DATA_SIZE,
                                                 four_way->eeprom_address));
     chunk_size = 256;
     m_serial->waitForBytesWritten(500);
@@ -683,10 +687,10 @@ void Widget::on_writeBinary_clicked() {
         ui->progressBar->setValue(0);
         four_way->ack_required = true;
 
-        QByteArray another_eeprom_out;
+        QByteArray another_eeprom_out(EEPROM_DATA_SIZE, 0);
         if(eeprom_buffer->size() != 0) {
-        for (int i = 0; i < 48; i++) {
-          another_eeprom_out.append(eeprom_buffer->at(i));
+        for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
+          another_eeprom_out[i] = (eeprom_buffer->at(i));
         }
         another_eeprom_out[00] = 0x01;
         if (ui->crawlerFlash->isChecked()) {
@@ -704,12 +708,12 @@ void Widget::on_writeBinary_clicked() {
 
           if (four_way->direct) {
 
-            sendDirect(another_eeprom_out, 48, four_way->eeprom_address);
+            sendDirect(another_eeprom_out, EEPROM_DATA_SIZE, four_way->eeprom_address);
 
           } else {
 
             writeData(four_way->makeFourWayWriteCommand(
-                another_eeprom_out, 48, four_way->eeprom_address));
+                another_eeprom_out, EEPROM_DATA_SIZE, four_way->eeprom_address));
 
             m_serial->waitForBytesWritten(1000);
             while (m_serial->waitForReadyRead(1000)) {
@@ -882,7 +886,6 @@ void Widget::on_VerifyFlash_clicked() {
 }
 
 bool Widget::connectMotor(uint8_t motor) {
-  uint16_t buffer_length = 48;
 
   ui->escStatusLabel->setText("Connecting to ESC...");
   ui->escStatusLabel_2->setText("Connecting to ESC...");
@@ -916,34 +919,41 @@ bool Widget::connectMotor(uint8_t motor) {
     }
 
     QByteArray data = m_serial->readAll();
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< data.toHex();
     if (data[data.size() - 1] == char(0x30)) {
       qInfo("good ack !!!!");
     } else {
       return false;
     }
 
-    writeData(RL->readFlash(48));
+    writeData(RL->readFlash(EEPROM_DATA_SIZE));
     m_serial->waitForBytesWritten(500);
     while (m_serial->waitForReadyRead(500)) {
     }
     QByteArray flash = m_serial->readAll();
-    if(flash.size() == 55){
+    qInfo("size of flash : %d ", flash.size());
+
+    if(flash.size() == (EEPROM_DATA_SIZE + 7)){
     flash.remove(0, 4);
     }
+
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< flash.toHex();
      qInfo("size of flash : %d ", flash.size());
     if (flash[flash.size() - 1] == char(0x30)) {
       qInfo("good ack read !!!!");
+        flash.remove(flash.size() - 1, 1);
     } else {
       return false;
     }
-    if (RL->checkCRC(flash, flash.size() - 1)) { // last byte ack 0x30
+    if (RL->checkCRC(flash, flash.size())) { // last byte ack 0x30
       qInfo("GOOD crc FROM ESC -- read");
+        flash.remove(flash.size() - 2, 2);
       hideESCSettings(false);
       hideEEPROMSettings(false);
       ui->sendFirstEEPROM->setHidden(false);
       ui->crawler_default_button->setHidden(false);
       input_buffer->clear();
-      for (int i = 0; i < flash.size() - 2; i++) {
+      for (int i = 0; i < flash.size(); i++) {
         input_buffer->append(flash[i]);
       }
     }
@@ -967,7 +977,7 @@ bool Widget::connectMotor(uint8_t motor) {
 
     while (four_way->ack_required) {
 
-      writeData(four_way->makeFourWayReadCommand(buffer_length,
+      writeData(four_way->makeFourWayReadCommand(EEPROM_DATA_SIZE,
                                                  four_way->eeprom_address));
       m_serial->waitForBytesWritten(500);
       while (m_serial->waitForReadyRead(1000)) {
@@ -983,7 +993,7 @@ bool Widget::connectMotor(uint8_t motor) {
 
 //
 qInfo("inputBUFFERAT0 : %d ", input_buffer->at(0));
-
+qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< input_buffer->toHex();
 //return false;
 if ((input_buffer->at(0) == (char)0xFF)) {
     QMessageBox::warning( // no settings area found
@@ -1128,16 +1138,23 @@ if ((input_buffer->at(0) == (char)0x01)) {
       ui->currentSlider->setValue((uint8_t)(input_buffer->at(44)));
       ui->signalComboBox->setCurrentIndex((uint8_t)(input_buffer->at(46)));
     }
+
+    qInfo("size of input_buffer : %d ", input_buffer->size());
+    if ((input_buffer->size() > 55) && (input_buffer->at(1) >= 2)) { // if ESC is curently on eeprom version 2+
+        ui->minRpmSlider->setValue((uint8_t)(input_buffer->at(192)));
+        ui->maxRpmSlider->setValue((uint8_t)(input_buffer->at(193)));
+        qDebug() << (uint8_t)ui->minRpmSlider->value();
+        qDebug() << (uint8_t)ui->maxRpmSlider->value();
+    }
+
     if (input_buffer->at(47) == 0x01) {
       ui->AutoTimingButton->setChecked(true);
     } else {
       ui->AutoTimingButton->setChecked(false);
     }
 
-    if ((input_buffer->at(1) >=
-         (char)0x05)) {
-
-
+    if ((input_buffer->at(1) >= (char)0x05))
+    {
 
     }
 
@@ -1170,10 +1187,11 @@ if ((input_buffer->at(0) == (char)0x01)) {
 
 
     qInfo(" output integer %i", output);
-    eeprom_buffer->clear();
+    eeprom_buffer->fill(0, EEPROM_DATA_SIZE);
+    qInfo("size of input_buffer : %d ", eeprom_buffer->size());
     // eeprom_buffer = input_buffer;
-    for (int i = 0; i < buffer_length; i++) {
-      eeprom_buffer->append(input_buffer->at(i));
+    for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
+      eeprom_buffer->data()[i] = (input_buffer->at(i));
     }
     ui->escStatusLabel_2->setText("Connected");
     if (!four_way->direct) {
@@ -1196,9 +1214,9 @@ if ((input_buffer->at(0) == (char)0x01)) {
     ui->sinCheckBox->setChecked(false);
     ui->escStatusLabel_2->setText("Connected - No EEprom");
     ui->escStatusLabel->setText("Connected - No EEprom");
-    for (int i = 0; i < 48; i++) {
-      eeprom_buffer->append(char(0));
-    }
+
+    eeprom_buffer->fill(0, EEPROM_DATA_SIZE);
+
     return false;
   }
 }
@@ -1339,6 +1357,8 @@ void Widget::sendDirect(const QByteArray sendbuffer, uint16_t buffer_size,
   while (m_serial->waitForReadyRead(50)) {
   }
   QByteArray data = m_serial->readAll();
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] => data";
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< data.toHex();
   if (data[data.size() - 1] == char(0x30)) {
     qInfo("good ADDRESS ack !!!!");
   } else {
@@ -1354,6 +1374,8 @@ void Widget::sendDirect(const QByteArray sendbuffer, uint16_t buffer_size,
   while (m_serial->waitForReadyRead(75)) {
   }
   QByteArray data2 = m_serial->readAll();
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] => data2";
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< data2.toHex();
   if (data2[data2.size() - 1] == char(0x30)) {
     qInfo("good ack receive !!!!");
   } else {
@@ -1365,6 +1387,8 @@ void Widget::sendDirect(const QByteArray sendbuffer, uint16_t buffer_size,
   while (m_serial->waitForReadyRead(50)) {
   }
   QByteArray data3 = m_serial->readAll();
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] => data3";
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< data3.toHex();
   if (data3[data3.size() - 1] == char(0x30)) {
     qInfo("good ack flash !!!!");
     four_way->ack_required = false;
@@ -1378,12 +1402,19 @@ void Widget::sendDirect(const QByteArray sendbuffer, uint16_t buffer_size,
 void Widget::on_writeEEPROM_2_clicked() { on_writeEEPROM_clicked(); }
 
 void Widget::on_writeEEPROM_clicked() {
-  four_way->ack_required = true;
-  QByteArray eeprom_out;
-  for (int i = 0; i < 48; i++) {
-    eeprom_out.append(eeprom_buffer->at(i));
-  }
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>" << "Write EEPROM";
+    four_way->ack_required = true;
+
+    QByteArray eeprom_out(EEPROM_DATA_SIZE,0);
+
+    for (int i = 0; i < eeprom_buffer->size(); i++) {
+        //qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>" << i;
+        eeprom_out[i] = (eeprom_buffer->at(i));
+    }
  // eeprom_out[1] = char(0x01); // eeprom version 1
+
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] => eeprom_out";
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< eeprom_out.toHex();
 
   eeprom_out[17] = (char)ui->rvCheckBox->isChecked();
   eeprom_out[18] = (char)ui->biDirectionCheckbox->isChecked();
@@ -1417,13 +1448,25 @@ void Widget::on_writeEEPROM_clicked() {
   eeprom_out[46] = (char)ui->signalComboBox->currentIndex();
   eeprom_out[47] = (char)ui->AutoTimingButton->isChecked();
 
+    qInfo("size of eeprom_buffer : %d ", eeprom_buffer->size());
+  if ((eeprom_buffer->size() > 48) && (eeprom_buffer->at(1) >= 2)) { // if ESC is curently on eeprom version 2+ and size if official am32
+      eeprom_out[192] = (uint8_t)ui->minRpmSlider->value();
+      eeprom_out[193] = (uint8_t)ui->maxRpmSlider->value();
+      qDebug() << (uint8_t)ui->minRpmSlider->value();
+      qDebug() << (uint8_t)ui->maxRpmSlider->value();
+      qDebug() << eeprom_out[192];
+      qDebug() << eeprom_out[193];
+  }
+
+  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< eeprom_out.toHex();
+
   if (four_way->direct) {
-    sendDirect(eeprom_out, 48, four_way->eeprom_address);
+    sendDirect(eeprom_out, EEPROM_DATA_SIZE, four_way->eeprom_address);
     ui->escStatusLabel->setText("WRITE EEPROM SUCCESSFUL");
 
   } else {
 
-    writeData(four_way->makeFourWayWriteCommand(eeprom_out, 48,
+    writeData(four_way->makeFourWayWriteCommand(eeprom_out, EEPROM_DATA_SIZE,
                                                 four_way->eeprom_address));
 
     m_serial->waitForBytesWritten(500);
@@ -1462,7 +1505,7 @@ void Widget::sendFirstEeprom(uint8_t eeprom_type) {
 
   QByteArray eeprom_out;
   if (eeprom_type == 0) {
-    for (int i = 0; i < 48; i++) {
+    for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
       eeprom_out.append((char)air_starteeprom[i]);
     }
   }
@@ -1474,9 +1517,9 @@ void Widget::sendFirstEeprom(uint8_t eeprom_type) {
   four_way->ack_required = true;
 
   if (four_way->direct) {
-    sendDirect(eeprom_out, 48, four_way->eeprom_address);
+    sendDirect(eeprom_out, EEPROM_DATA_SIZE, four_way->eeprom_address);
   } else {
-    writeData(four_way->makeFourWayWriteCommand(eeprom_out, 48,
+    writeData(four_way->makeFourWayWriteCommand(eeprom_out, EEPROM_DATA_SIZE,
                                                 four_way->eeprom_address));
     m_serial->waitForBytesWritten(500);
     while (m_serial->waitForReadyRead(500)) {
@@ -2022,9 +2065,9 @@ void Widget::on_crawler_default_button_clicked() {
 
 void Widget::on_saveConfigButton_clicked()
 {
-  QByteArray eeprom_out;
-  for (int i = 0; i < 48; i++) {
-    eeprom_out.append(eeprom_buffer->at(i));
+    QByteArray eeprom_out(EEPROM_DATA_SIZE, 0);
+  for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
+    eeprom_out[i] = (eeprom_buffer->at(i));
   }
   // eeprom_out[1] = char(0x01); // eeprom version 1
 
@@ -2060,6 +2103,9 @@ void Widget::on_saveConfigButton_clicked()
   eeprom_out[46] = (char)ui->signalComboBox->currentIndex();
   eeprom_out[47] = (char)ui->AutoTimingButton->isChecked();
 
+  eeprom_out[192] = (char)ui->minRpmSlider->value();
+  eeprom_out[193] = (char)ui->maxRpmSlider->value();
+
   QFileDialog::saveFileContent(eeprom_out, "am32_config.ecf");
   qInfo("file written");
    ui->configFileInfo->setText("Config File Saved");
@@ -2067,12 +2113,10 @@ void Widget::on_saveConfigButton_clicked()
 
 void Widget::on_loadConfigButton_clicked()
 {
-   QByteArray fileBuffer;
-   uint16_t buffer_length = 48;
+    QByteArray fileBuffer(EEPROM_DATA_SIZE, 0);
    if(firstOffline == true){
-      for (int i = 0; i < 48; i++) {
-        fileBuffer.append(air_starteeprom[i]);
-
+      for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
+        fileBuffer[i] = (air_starteeprom[i]);
       }
       firstOffline = false;
  //   override = 0;
@@ -2226,6 +2270,11 @@ void Widget::on_loadConfigButton_clicked()
       ui->signalComboBox->setCurrentIndex((uint8_t)(fileBuffer.at(46)));
     }
 
+    if (input_buffer->at(1) >= 2) { // if ESC is curently on eeprom version 2+
+        ui->minRpmSlider->setValue((uint8_t)(fileBuffer.at(192)));
+        ui->maxRpmSlider->setValue((uint8_t)(fileBuffer.at(193)));
+    }
+
     QString name; // 2 bytes
     name.append(QChar(fileBuffer.at(5)));
     name.append(QChar(fileBuffer.at(6)));
@@ -2252,10 +2301,10 @@ void Widget::on_loadConfigButton_clicked()
     QChar charas = fileBuffer.at(18);
     int output = charas.toLatin1();
     qInfo(" output integer %i", output);
-    eeprom_buffer->clear();
+    eeprom_buffer->fill(0, EEPROM_DATA_SIZE);
 //     eeprom_buffer = fileBuffer;
-    for (int i = 0; i < buffer_length; i++) {
-      eeprom_buffer->append(fileBuffer.at(i));
+    for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
+      eeprom_buffer->data()[i] = fileBuffer.at(i);
     }
 
     ui->configFileInfo->setText("Config File:" + filename);

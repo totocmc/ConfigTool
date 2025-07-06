@@ -1,6 +1,7 @@
 #include "BF_ROOTLOADER.h"
 
 #include <QMessageBox>
+#include <QDebug>
 
 typedef union __attribute__ ((packed)) {
     uint8_t bytes[2];
@@ -49,6 +50,7 @@ QByteArray BF_ROOTLOADER::setAddress(uint16_t address){
     thisAddress.append(calculated_crc_low_byte);
     thisAddress.append(calculated_crc_high_byte);
 
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< thisAddress.toHex();
     return thisAddress;
 }
 
@@ -56,7 +58,7 @@ QByteArray BF_ROOTLOADER::setBufferSize(uint16_t size){
 if(size == 256){
     size = 0;
 }
-
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< size;
     QByteArray output_to_esc_buffer;
     output_to_esc_buffer.append((char)0xfe);
     output_to_esc_buffer.append((char) 0x00);
@@ -65,6 +67,7 @@ if(size == 256){
      makeCRC(output_to_esc_buffer, 4);
     output_to_esc_buffer.append((char)calculated_crc_low_byte);
     output_to_esc_buffer.append((char)calculated_crc_high_byte);
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< output_to_esc_buffer.toHex();
    return output_to_esc_buffer;
 }
 
@@ -75,6 +78,7 @@ QByteArray BF_ROOTLOADER::writeFlash(){
     makeCRC(output_to_esc_buffer, 2);
     output_to_esc_buffer.append((char)calculated_crc_low_byte);
     output_to_esc_buffer.append((char)calculated_crc_high_byte);
+    qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< output_to_esc_buffer.toHex();
   return output_to_esc_buffer;
 }
 
@@ -86,6 +90,8 @@ QByteArray BF_ROOTLOADER::readFlash(uint8_t size){
      makeCRC(output_to_esc_buffer, 2);
      output_to_esc_buffer.append((char)calculated_crc_low_byte);
      output_to_esc_buffer.append((char)calculated_crc_high_byte);
+
+     qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< output_to_esc_buffer.toHex();
 
 return output_to_esc_buffer;
 }
@@ -99,6 +105,7 @@ QByteArray BF_ROOTLOADER::sendBuffer(QByteArray inbuffer){
      outBuffer.append( calculated_crc_low_byte);
      outBuffer.append( calculated_crc_high_byte);
 
+qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< outBuffer.toHex();
 return outBuffer;
 }
 
