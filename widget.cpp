@@ -1759,6 +1759,24 @@ void Widget::on_lowVoltageThresholdSlider_valueChanged(int value) {
   ui->lowVoltageLineEdit->setText(QString::number(value + 250));
 }
 
+void Widget::on_minRpmSlider_valueChanged(int value) {
+    ui->minRpmLineEdit->setText(QString::number(value * 100));
+}
+
+void Widget::on_maxRpmSlider_valueChanged(int value) {
+    ui->maxRpmLineEdit->setText(QString::number(value * 100));
+}
+
+void Widget::on_minRpmLineEdit_editingFinished() {
+    ui->minRpmSlider->setValue(
+        (ui->minRpmLineEdit->text()).toInt());
+}
+
+void Widget::on_maxRpmLineEdit_editingFinished() {
+    ui->maxRpmSlider->setValue(
+        (ui->maxRpmLineEdit->text()).toInt());
+}
+
 void Widget::on_initMotor1_3_clicked() { on_initMotor1_clicked(); }
 
 void Widget::on_initMotor2_3_clicked() { on_initMotor2_clicked(); }
