@@ -121,6 +121,14 @@ private slots:
 
     void on_lowVoltageThresholdSlider_valueChanged(int value);
 
+    void on_minRpmSlider_valueChanged(int value);
+
+    void on_maxRpmSlider_valueChanged(int value);
+
+    void on_minRpmLineEdit_editingFinished();
+
+    void on_maxRpmLineEdit_editingFinished();
+
     void on_highThresholdLineEdit_editingFinished();
 
     void on_servoNeuralLineEdit_editingFinished();

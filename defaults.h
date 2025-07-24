@@ -3,7 +3,9 @@
 
 #include <QWidget>
 
-uint8_t air_starteeprom[48] ={
+#define EEPROM_DATA_SIZE    248
+
+uint8_t air_starteeprom[EEPROM_DATA_SIZE] = {
 
      0x01,              // eeprom start byte, must be 1
      0x02,              // eeprom version 0-255
