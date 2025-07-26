@@ -34,8 +34,6 @@ private slots:
 
     void on_pushButton_clicked();
 
-    void on_sendMessageButton_clicked();
-
     void on_passthoughButton_clicked();
 
     void on_horizontalSlider_sliderMoved(int position);
@@ -43,9 +41,6 @@ private slots:
     void on_serialSelectorBox_currentTextChanged(const QString &arg1);
 
    // void on_fourWaySendButton_clicked();
-
-    void on_pushButton_2_clicked();
-
 
     void on_loadBinary_clicked();
 
@@ -66,8 +61,6 @@ private slots:
     void on_writeEEPROM_clicked();
 
     void on_sendFirstEEPROM_clicked();
-
-    void on_devSettings_stateChanged(int arg1);
 
     void on_endPassthrough_clicked();
 

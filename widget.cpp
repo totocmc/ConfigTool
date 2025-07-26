@@ -382,11 +382,6 @@ if(data.size() != 0){
 
 void Widget::writeData(const QByteArray &data) { m_serial->write(data); }
 
-void Widget::on_sendMessageButton_clicked() {
-  // const QByteArray data = ui->plainTextEdit->toPlainText().toLocal8Bit();
-  // writeData(data);
-}
-
 uint8_t Widget::mspSerialChecksumBuf(uint8_t checksum, const uint8_t *data,
                                      int len) {
   while (len-- > 0) {
@@ -401,10 +396,10 @@ void Widget::on_pushButton_clicked() {
   writeData(four_way->makeFourWayCommand(0x3f, 0x04));
 }
 
-void Widget::on_pushButton_2_clicked() {
-  four_way->ack_required = true;
-  writeData(four_way->makeFourWayCommand(0x37, 0x00));
-}
+// void Widget::on_pushButton_2_clicked() {
+//   four_way->ack_required = true;
+//   writeData(four_way->makeFourWayCommand(0x37, 0x00));
+// }
 
 void Widget::on_passthoughButton_clicked() {
   hide4wayButtons(false);
@@ -1538,13 +1533,13 @@ void Widget::on_sendFirstEEPROM_clicked() {
  // resetESC();////////////////////////////////////////////////////////////////////////////////////////////////////////debug!!
 }
 
-void Widget::on_devSettings_stateChanged(int arg1) {
-  if (arg1 == 0) {
-    // ui->devFrame->setHidden(true);
-  } else {
-    //  ui->devFrame->setHidden(false);
-  }
-}
+// void Widget::on_devSettings_stateChanged(int arg1) {
+//   if (arg1 == 0) {
+//     // ui->devFrame->setHidden(true);
+//   } else {
+//     //  ui->devFrame->setHidden(false);
+//   }
+// }
 
 void Widget::on_endPassthrough_clicked() {
   hide4wayButtons(true);
