@@ -3,7 +3,6 @@
 #include "defaults.h"
 #include "fourwayif.h"
 #include "ui_widget.h"
-#include "bluejaymelody.h"
 
 #include <QComboBox>
 #include <QFile>
@@ -926,14 +925,14 @@ bool Widget::connectMotor(uint8_t motor) {
     while (m_serial->waitForReadyRead(500)) {
     }
     QByteArray flash = m_serial->readAll();
-    qInfo("size of flash : %d ", flash.size());
+    qInfo("size of flash : %lld ", flash.size());
 
     if(flash.size() == (EEPROM_DATA_SIZE + 7)){
     flash.remove(0, 4);
     }
 
     qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< flash.toHex();
-     qInfo("size of flash : %d ", flash.size());
+     qInfo("size of flash : %lld ", flash.size());
     if (flash[flash.size() - 1] == char(0x30)) {
       qInfo("good ack read !!!!");
         flash.remove(flash.size() - 1, 1);
@@ -1134,7 +1133,7 @@ if ((input_buffer->at(0) == (char)0x01)) {
       ui->signalComboBox->setCurrentIndex((uint8_t)(input_buffer->at(46)));
     }
 
-    qInfo("size of input_buffer : %d ", input_buffer->size());
+    qInfo("size of input_buffer : %lld ", input_buffer->size());
     if ((input_buffer->size() > 55) && (input_buffer->at(1) >= 2)) { // if ESC is curently on eeprom version 2+
         ui->minRpmSlider->setValue((uint8_t)(input_buffer->at(192)));
         ui->maxRpmSlider->setValue((uint8_t)(input_buffer->at(193)));
@@ -1183,7 +1182,7 @@ if ((input_buffer->at(0) == (char)0x01)) {
 
     qInfo(" output integer %i", output);
     eeprom_buffer->fill(0, EEPROM_DATA_SIZE);
-    qInfo("size of input_buffer : %d ", eeprom_buffer->size());
+    qInfo("size of input_buffer : %lld ", eeprom_buffer->size());
     // eeprom_buffer = input_buffer;
     for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
       eeprom_buffer->data()[i] = (input_buffer->at(i));
@@ -1443,7 +1442,7 @@ void Widget::on_writeEEPROM_clicked() {
   eeprom_out[46] = (char)ui->signalComboBox->currentIndex();
   eeprom_out[47] = (char)ui->AutoTimingButton->isChecked();
 
-    qInfo("size of eeprom_buffer : %d ", eeprom_buffer->size());
+    qInfo("size of eeprom_buffer : %lld ", eeprom_buffer->size());
   if ((eeprom_buffer->size() > 48) && (eeprom_buffer->at(1) >= 2)) { // if ESC is curently on eeprom version 2+ and size if official am32
       eeprom_out[192] = (uint8_t)ui->minRpmSlider->value();
       eeprom_out[193] = (uint8_t)ui->maxRpmSlider->value();
