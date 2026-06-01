@@ -28,7 +28,7 @@ Widget::Widget(QWidget *parent)
   ui->setupUi(this);
   ui->tabWidget->removeTab(4); // todo make these visible
   ui->tabWidget->removeTab(4);   // remove led tab for now
-  this->setWindowTitle("Multi ESC Config Tool 1.86");
+  this->setWindowTitle("Multi ESC Config Tool 2.00");
 
   serialInfoStuff();
 
