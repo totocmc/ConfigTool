@@ -1,6 +1,7 @@
 #include "widget.h"
 #include "BF_ROOTLOADER.h"
 #include "defaults.h"
+#include "eeprom.h"
 #include "fourwayif.h"
 #include "ui_widget.h"
 
@@ -17,6 +18,91 @@
 #include <QTextStream>
 #include <QDebug>
 
+#include <cstddef>
+
+static_assert(sizeof(EEprom_t) == static_cast<std::size_t>(EEPROM_DATA_SIZE),
+              "EEprom_t and EEPROM_DATA_SIZE must match");
+
+namespace {
+
+void copy_qbytearray_to_eeprom(const QByteArray &src, EEprom_t *out)
+{
+    eeprom_from_bytes(reinterpret_cast<const uint8_t *>(src.constData()),
+                        static_cast<std::size_t>(src.size()), out);
+}
+
+/** Overwrite UI-backed fields on an existing EEPROM image. */
+void apply_ui_to_eeprom_fields(Ui::Widget *ui, EEprom_t *ee, bool set_rpm_limits,
+                               bool set_vcc_v4)
+{
+    ee->dir_reversed = static_cast<uint8_t>(ui->rvCheckBox->isChecked());
+    ee->bi_direction = static_cast<uint8_t>(ui->biDirectionCheckbox->isChecked());
+    ee->use_sine_start = static_cast<uint8_t>(ui->sinCheckBox->isChecked());
+    ee->comp_pwm = static_cast<uint8_t>(ui->comp_pwmCheckbox->isChecked());
+    ee->variable_pwm = static_cast<uint8_t>(ui->varPWMCheckBox->isChecked());
+    ee->stuck_rotor_protection =
+        static_cast<uint8_t>(ui->StallProtectionBox->isChecked());
+    ee->advance_level =
+        static_cast<uint8_t>(ui->timingAdvanceSlider->value());
+    ee->pwm_frequency = static_cast<uint8_t>(ui->pwmFreqSlider->value());
+    ee->startup_power =
+        static_cast<uint8_t>(ui->startupPowerSlider->value());
+    ee->motor_kv = static_cast<uint8_t>(ui->motorKVSlider->value());
+    ee->motor_poles = static_cast<uint8_t>(ui->motorPolesSlider->value());
+    ee->brake_on_stop = static_cast<uint8_t>(ui->brakecheckbox->isChecked());
+    ee->stall_protection = static_cast<uint8_t>(ui->antiStallBox->isChecked());
+    ee->beep_volume = static_cast<uint8_t>(ui->beepVolumeSlider->value());
+    ee->telemetry_on_interval =
+        static_cast<uint8_t>(ui->thirtymsTelemBox->isChecked());
+    ee->servo.low_threshold =
+        static_cast<uint8_t>(ui->servoLowSlider->value());
+    ee->servo.high_threshold =
+        static_cast<uint8_t>(ui->servoHighSlider->value());
+    ee->servo.neutral =
+        static_cast<uint8_t>(ui->servoNeutralSlider->value());
+    ee->servo.dead_band =
+        static_cast<uint8_t>(ui->servoDeadBandSlider->value());
+    ee->low_voltage_cut_off =
+        static_cast<uint8_t>(ui->lowVoltageCuttoffBox->isChecked());
+    ee->low_cell_volt_cutoff =
+        static_cast<uint8_t>(ui->lowVoltageThresholdSlider->value());
+    ee->rc_car_reverse = static_cast<uint8_t>(ui->rcCarReverse->isChecked());
+    ee->use_hall_sensors =
+        static_cast<uint8_t>(ui->hallSensorCheckbox->isChecked());
+    ee->sine_mode_changeover_thottle_level =
+        static_cast<uint8_t>(ui->sineStartupSlider->value());
+    ee->drag_brake_strength =
+        static_cast<uint8_t>(ui->dragBrakeSlider->value());
+    ee->driving_brake_strength =
+        static_cast<uint8_t>(ui->runningBrakeStrength->value());
+    ee->limits.temperature =
+        static_cast<uint8_t>(ui->temperatureSlider->value());
+    ee->limits.current = static_cast<uint8_t>(ui->currentSlider->value());
+    ee->sine_mode_power =
+        static_cast<uint8_t>(ui->sineModePowerSlider->value());
+    ee->input_type =
+        static_cast<uint8_t>(ui->signalComboBox->currentIndex());
+    ee->auto_advance = static_cast<uint8_t>(ui->AutoTimingButton->isChecked());
+    if (set_rpm_limits) {
+        ee->vcc.min_rpm = static_cast<uint8_t>(ui->minRpmSlider->value());
+        ee->vcc.max_rpm = static_cast<uint8_t>(ui->maxRpmSlider->value());
+    }
+    if (set_vcc_v4) {
+        ee->vcc.flight_time =
+            static_cast<uint16_t>(ui->vccFlightTimeSpinBox->value());
+        ee->vcc.landed_wait =
+            static_cast<uint8_t>(ui->vccLandedWaitSpinBox->value());
+        ee->vcc.speed_target =
+            static_cast<uint8_t>(ui->vccSpeedTargetSpinBox->value());
+        ee->vcc.softstart_floor_rpm =
+            static_cast<uint16_t>(ui->vccSoftstartFloorRpmSpinBox->value());
+        ee->vcc.accel_pct_per_sec =
+            static_cast<uint8_t>(ui->vccAccelPctSpinBox->value());
+    }
+}
+
+} // namespace
+
 Widget::Widget(QWidget *parent)
     : QWidget(parent), ui(new Ui::Widget), four_way(new FourWayIF),
       RL(new BF_ROOTLOADER),
@@ -25,8 +111,9 @@ Widget::Widget(QWidget *parent)
       bluejay_tune(new QByteArray), eeprom_buffer(new QByteArray),
       music_buffer(new QByteArray) {
   ui->setupUi(this);
-  ui->tabWidget->removeTab(4); // todo make these visible
-  ui->tabWidget->removeTab(4);   // remove led tab for now
+  // Remove Advanced (4) then LED (4); VCC stays last after Settings / Flash / Motor / Input.
+  ui->tabWidget->removeTab(4);
+  ui->tabWidget->removeTab(4);
   this->setWindowTitle("Multi ESC Config Tool 2.00");
 
   serialInfoStuff();
@@ -124,7 +211,7 @@ void Widget::connectSerial() {
   if (ui->checkBox_2->isChecked()) {
     four_way->direct = true;
     m_serial->setBaudRate(m_serial->Baud19200);
-    if (ui->tabWidget->count() == 4) {
+    if (ui->tabWidget->count() == 5) {
       ui->tabWidget->removeTab(2);
       showSingleMotor(true);
     }
@@ -551,11 +638,11 @@ void Widget::on_writeBinary_clicked() {
 
   four_way->ack_required = true;
   if(eeprom_buffer->size() != 0){
-      QByteArray eeprom_out(EEPROM_DATA_SIZE, 0);
-  for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
-    eeprom_out[i] = (eeprom_buffer->at(i));
-  }
-  eeprom_out[0] = 0x00;
+      EEprom_t ee{};
+      copy_qbytearray_to_eeprom(*eeprom_buffer, &ee);
+      ee.reserved_0 = 0x00;
+      QByteArray eeprom_out(EEPROM_DATA_SIZE, '\0');
+      eeprom_to_bytes(&ee, reinterpret_cast<uint8_t *>(eeprom_out.data()));
 
   if (four_way->direct) {
 
@@ -577,7 +664,7 @@ void Widget::on_writeBinary_clicked() {
     ui->escStatusLabel->setText("Unable to set safety bit");
     return;
   }
-}
+  }
   QFileInfo fileInfo(filename);
   QByteArray line;
   QString ext = fileInfo.suffix(); // ext = "tar.gz"
@@ -681,12 +768,13 @@ void Widget::on_writeBinary_clicked() {
         ui->progressBar->setValue(0);
         four_way->ack_required = true;
 
-        QByteArray another_eeprom_out(EEPROM_DATA_SIZE, 0);
-        if(eeprom_buffer->size() != 0) {
-        for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
-          another_eeprom_out[i] = (eeprom_buffer->at(i));
-        }
-        another_eeprom_out[00] = 0x01;
+        if (eeprom_buffer->size() != 0) {
+        EEprom_t ee2{};
+        copy_qbytearray_to_eeprom(*eeprom_buffer, &ee2);
+        ee2.reserved_0 = 0x01;
+        QByteArray another_eeprom_out(EEPROM_DATA_SIZE, '\0');
+        eeprom_to_bytes(&ee2,
+                          reinterpret_cast<uint8_t *>(another_eeprom_out.data()));
         if (ui->crawlerFlash->isChecked()) {
           sendFirstEeprom(1);
           resetESC();
@@ -717,6 +805,7 @@ void Widget::on_writeBinary_clicked() {
             readData();
           }
         }
+        }
 
         if (four_way->ack_required == false) { // good ack received from esc
           ui->escStatusLabel->setText("WRITE EEPROM SUCCESSFUL");
@@ -726,13 +815,12 @@ void Widget::on_writeBinary_clicked() {
           ui->escStatusLabel->setText("Unable to set safety bit");
           return;
         }
+        } // eeprom_buffer->size() != 0
     //    resetESC();
         break;
         }
-        }
       }
     }
-  }
   qInfo("what is going on? size :  %d ", sizeofBin);
 }
 
@@ -1006,6 +1094,7 @@ if ((input_buffer->at(0) == (char)0x01)) {
           tr("No settings found use 'Send default EEPROM' under FLASH tab"));
       ui->eepromFrame->setHidden(true);
       ui->inputservoFrame->setHidden(true);
+      ui->vccEepromFrame->setHidden(true);
       ui->flashFourwayFrame->setHidden(false);
       ui->escStatusLabel_2->setText("Connected - No EEprom");
       ui->escStatusLabel->setText("Connected - No EEprom");
@@ -1023,6 +1112,7 @@ if ((input_buffer->at(0) == (char)0x01)) {
    //   ui->crawler_default_button->setHidden(true);
       ui->eepromFrame->setHidden(true);
       ui->inputservoFrame->setHidden(true);
+      ui->vccEepromFrame->setHidden(true);
       ui->flashFourwayFrame->setHidden(false);
       ui->escStatusLabel_2->setText("Connected - Firmware Update Required");
       ui->escStatusLabel->setText("Connected - Firmware Update Required");
@@ -1187,6 +1277,7 @@ if ((input_buffer->at(0) == (char)0x01)) {
     for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
       eeprom_buffer->data()[i] = (input_buffer->at(i));
     }
+    syncVccVersion4PanelFromBuffer();
     ui->escStatusLabel_2->setText("Connected");
     if (!four_way->direct) {
       getMusic();
@@ -1200,6 +1291,7 @@ if ((input_buffer->at(0) == (char)0x01)) {
 
     ui->eepromFrame->setHidden(true);
     ui->inputservoFrame->setHidden(true);
+    ui->vccEepromFrame->setHidden(true);
     ui->sendFirstEEPROM->setHidden(true);
     ui->crawler_default_button->setHidden(true);
     ui->flashFourwayFrame->setHidden(false);
@@ -1399,60 +1491,29 @@ void Widget::on_writeEEPROM_clicked() {
     qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>" << "Write EEPROM";
     four_way->ack_required = true;
 
-    QByteArray eeprom_out(EEPROM_DATA_SIZE,0);
+    EEprom_t ee{};
+    copy_qbytearray_to_eeprom(*eeprom_buffer, &ee);
+    const bool set_rpm_limits =
+        (eeprom_buffer->size() > 48) && (eeprom_buffer->at(1) >= 2);
+    const bool set_vcc_v4 =
+        (eeprom_buffer->size() > 200) &&
+        (static_cast<uint8_t>(eeprom_buffer->at(1)) >= 4);
+    apply_ui_to_eeprom_fields(ui, &ee, set_rpm_limits, set_vcc_v4);
 
-    for (int i = 0; i < eeprom_buffer->size(); i++) {
-        //qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>" << i;
-        eeprom_out[i] = (eeprom_buffer->at(i));
-    }
- // eeprom_out[1] = char(0x01); // eeprom version 1
+    QByteArray eeprom_out(EEPROM_DATA_SIZE, '\0');
+    eeprom_to_bytes(&ee, reinterpret_cast<uint8_t *>(eeprom_out.data()));
 
     qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] => eeprom_out";
     qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< eeprom_out.toHex();
 
-  eeprom_out[17] = (char)ui->rvCheckBox->isChecked();
-  eeprom_out[18] = (char)ui->biDirectionCheckbox->isChecked();
-  eeprom_out[19] = (char)ui->sinCheckBox->isChecked();
-  eeprom_out[20] = (char)ui->comp_pwmCheckbox->isChecked();
-  eeprom_out[21] = (char)ui->varPWMCheckBox->isChecked();
-  eeprom_out[22] = (char)ui->StallProtectionBox->isChecked();
-  eeprom_out[23] = (char)ui->timingAdvanceSlider->value();
-  eeprom_out[24] = (char)ui->pwmFreqSlider->value();
-  eeprom_out[25] = (char)ui->startupPowerSlider->value();
-  eeprom_out[26] = (char)ui->motorKVSlider->value();
-  eeprom_out[27] = (char)ui->motorPolesSlider->value();
-  eeprom_out[28] = (char)ui->brakecheckbox->isChecked();
-  eeprom_out[29] = (char)ui->antiStallBox->isChecked();
-  eeprom_out[30] = (char)ui->beepVolumeSlider->value();
-  eeprom_out[31] = (char)ui->thirtymsTelemBox->isChecked();
-  eeprom_out[32] = (char)ui->servoLowSlider->value();
-  eeprom_out[33] = (char)ui->servoHighSlider->value();
-  eeprom_out[34] = (char)ui->servoNeutralSlider->value();
-  eeprom_out[35] = (char)ui->servoDeadBandSlider->value();
-  eeprom_out[36] = (char)ui->lowVoltageCuttoffBox->isChecked();
-  eeprom_out[37] = (char)ui->lowVoltageThresholdSlider->value();
-  eeprom_out[38] = (char)ui->rcCarReverse->isChecked();
-  eeprom_out[39] = (char)ui->hallSensorCheckbox->isChecked();
-  eeprom_out[40] = (char)ui->sineStartupSlider->value();
-  eeprom_out[41] = (char)ui->dragBrakeSlider->value();
-  eeprom_out[42] = (char)ui->runningBrakeStrength->value();
-  eeprom_out[43] = (char)ui->temperatureSlider->value();
-  eeprom_out[44] = (char)ui->currentSlider->value();
-  eeprom_out[45] = (char)ui->sineModePowerSlider->value();
-  eeprom_out[46] = (char)ui->signalComboBox->currentIndex();
-  eeprom_out[47] = (char)ui->AutoTimingButton->isChecked();
-
-    qInfo("size of eeprom_buffer : %lld ", eeprom_buffer->size());
-  if ((eeprom_buffer->size() > 48) && (eeprom_buffer->at(1) >= 2)) { // if ESC is curently on eeprom version 2+ and size if official am32
-      eeprom_out[192] = (uint8_t)ui->minRpmSlider->value();
-      eeprom_out[193] = (uint8_t)ui->maxRpmSlider->value();
+    if (set_rpm_limits) {
       qDebug() << (uint8_t)ui->minRpmSlider->value();
       qDebug() << (uint8_t)ui->maxRpmSlider->value();
       qDebug() << eeprom_out[192];
       qDebug() << eeprom_out[193];
-  }
+    }
 
-  qDebug() << __FILE_NAME__ << "[" << __FUNCTION__ << "] =>"<< eeprom_out.toHex();
+    qInfo("size of eeprom_buffer : %lld ", eeprom_buffer->size());
 
   if (four_way->direct) {
     sendDirect(eeprom_out, EEPROM_DATA_SIZE, four_way->eeprom_address);
@@ -1490,9 +1551,28 @@ void Widget::hideESCSettings(bool b) {
 void Widget::hideEEPROMSettings(bool b) {
   ui->eepromFrame->setHidden(b);
   ui->inputservoFrame->setHidden(b);
+  ui->vccEepromFrame->setHidden(b);
   ui->flashFourwayFrame->setHidden(b);
 
   //  qInfo(" slot working");
+}
+
+void Widget::syncVccVersion4PanelFromBuffer() {
+  const bool show = eeprom_buffer->size() > 200 &&
+      static_cast<uint8_t>(eeprom_buffer->at(1)) >= 4;
+  ui->vccVersion4Frame->setVisible(show);
+  if (!show) {
+    return;
+  }
+  EEprom_t ee{};
+  eeprom_from_bytes(reinterpret_cast<const uint8_t *>(eeprom_buffer->constData()),
+                    static_cast<std::size_t>(eeprom_buffer->size()), &ee);
+  ui->vccFlightTimeSpinBox->setValue(static_cast<int>(ee.vcc.flight_time));
+  ui->vccLandedWaitSpinBox->setValue(static_cast<int>(ee.vcc.landed_wait));
+  ui->vccSpeedTargetSpinBox->setValue(static_cast<int>(ee.vcc.speed_target));
+  ui->vccSoftstartFloorRpmSpinBox->setValue(
+      static_cast<int>(ee.vcc.softstart_floor_rpm));
+  ui->vccAccelPctSpinBox->setValue(static_cast<int>(ee.vcc.accel_pct_per_sec));
 }
 
 void Widget::sendFirstEeprom(uint8_t eeprom_type) {
@@ -1526,6 +1606,7 @@ void Widget::sendFirstEeprom(uint8_t eeprom_type) {
   }
   ui->eepromFrame->setHidden(true);
   ui->inputservoFrame->setHidden(true);
+  ui->vccEepromFrame->setHidden(true);
 }
 void Widget::on_sendFirstEEPROM_clicked() {
   sendFirstEeprom(0);
@@ -2059,46 +2140,15 @@ void Widget::on_crawler_default_button_clicked() {
 
 void Widget::on_saveConfigButton_clicked()
 {
-    QByteArray eeprom_out(EEPROM_DATA_SIZE, 0);
-  for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
-    eeprom_out[i] = (eeprom_buffer->at(i));
-  }
-  // eeprom_out[1] = char(0x01); // eeprom version 1
+    EEprom_t ee{};
+    copy_qbytearray_to_eeprom(*eeprom_buffer, &ee);
+    const bool set_vcc_v4 =
+        (eeprom_buffer->size() > 200) &&
+        (static_cast<uint8_t>(eeprom_buffer->at(1)) >= 4);
+    apply_ui_to_eeprom_fields(ui, &ee, true, set_vcc_v4);
 
-  eeprom_out[17] = (char)ui->rvCheckBox->isChecked();
-  eeprom_out[18] = (char)ui->biDirectionCheckbox->isChecked();
-  eeprom_out[19] = (char)ui->sinCheckBox->isChecked();
-  eeprom_out[20] = (char)ui->comp_pwmCheckbox->isChecked();
-  eeprom_out[21] = (char)ui->varPWMCheckBox->isChecked();
-  eeprom_out[22] = (char)ui->StallProtectionBox->isChecked();
-  eeprom_out[23] = (char)ui->timingAdvanceSlider->value();
-  eeprom_out[24] = (char)ui->pwmFreqSlider->value();
-  eeprom_out[25] = (char)ui->startupPowerSlider->value();
-  eeprom_out[26] = (char)ui->motorKVSlider->value();
-  eeprom_out[27] = (char)ui->motorPolesSlider->value();
-  eeprom_out[28] = (char)ui->brakecheckbox->isChecked();
-  eeprom_out[29] = (char)ui->antiStallBox->isChecked();
-  eeprom_out[30] = (char)ui->beepVolumeSlider->value();
-  eeprom_out[31] = (char)ui->thirtymsTelemBox->isChecked();
-  eeprom_out[32] = (char)ui->servoLowSlider->value();
-  eeprom_out[33] = (char)ui->servoHighSlider->value();
-  eeprom_out[34] = (char)ui->servoNeutralSlider->value();
-  eeprom_out[35] = (char)ui->servoDeadBandSlider->value();
-  eeprom_out[36] = (char)ui->lowVoltageCuttoffBox->isChecked();
-  eeprom_out[37] = (char)ui->lowVoltageThresholdSlider->value();
-  eeprom_out[38] = (char)ui->rcCarReverse->isChecked();
-  eeprom_out[39] = (char)ui->hallSensorCheckbox->isChecked();
-  eeprom_out[40] = (char)ui->sineStartupSlider->value();
-  eeprom_out[41] = (char)ui->dragBrakeSlider->value();
-  eeprom_out[42] = (char)ui->runningBrakeStrength->value();
-  eeprom_out[43] = (char)ui->temperatureSlider->value();
-  eeprom_out[44] = (char)ui->currentSlider->value();
-  eeprom_out[45] = (char)ui->sineModePowerSlider->value();
-  eeprom_out[46] = (char)ui->signalComboBox->currentIndex();
-  eeprom_out[47] = (char)ui->AutoTimingButton->isChecked();
-
-  eeprom_out[192] = (char)ui->minRpmSlider->value();
-  eeprom_out[193] = (char)ui->maxRpmSlider->value();
+    QByteArray eeprom_out(EEPROM_DATA_SIZE, '\0');
+    eeprom_to_bytes(&ee, reinterpret_cast<uint8_t *>(eeprom_out.data()));
 
   QFileDialog::saveFileContent(eeprom_out, "am32_config.ecf");
   qInfo("file written");
@@ -2137,6 +2187,7 @@ void Widget::on_loadConfigButton_clicked()
           tr("No settings found use 'Send default EEPROM' under FLASH tab"));
       ui->eepromFrame->setHidden(true);
       ui->inputservoFrame->setHidden(true);
+      ui->vccEepromFrame->setHidden(true);
       ui->flashFourwayFrame->setHidden(false);
       ui->escStatusLabel_2->setText("Connected - No EEprom");
       ui->escStatusLabel->setText("Connected - No EEprom");
@@ -2154,6 +2205,7 @@ void Widget::on_loadConfigButton_clicked()
       ui->crawler_default_button->setHidden(true);
       ui->eepromFrame->setHidden(true);
       ui->inputservoFrame->setHidden(true);
+      ui->vccEepromFrame->setHidden(true);
       ui->flashFourwayFrame->setHidden(false);
       ui->escStatusLabel_2->setText("Connected - Firmware Update Required");
       ui->escStatusLabel->setText("Connected - Firmware Update Required");
@@ -2264,7 +2316,7 @@ void Widget::on_loadConfigButton_clicked()
       ui->signalComboBox->setCurrentIndex((uint8_t)(fileBuffer.at(46)));
     }
 
-    if (input_buffer->at(1) >= 2) { // if ESC is curently on eeprom version 2+
+    if (fileBuffer.size() > 55 && fileBuffer.at(1) >= 2) {
         ui->minRpmSlider->setValue((uint8_t)(fileBuffer.at(192)));
         ui->maxRpmSlider->setValue((uint8_t)(fileBuffer.at(193)));
     }
@@ -2300,6 +2352,7 @@ void Widget::on_loadConfigButton_clicked()
     for (int i = 0; i < EEPROM_DATA_SIZE; i++) {
       eeprom_buffer->data()[i] = fileBuffer.at(i);
     }
+    syncVccVersion4PanelFromBuffer();
 
     ui->configFileInfo->setText("Config File:" + filename);
 
@@ -2312,7 +2365,7 @@ void Widget::on_OfflineCheckBox_stateChanged(int arg1)
     hide4wayButtons(false);
     hideESCSettings(false);
     hideEEPROMSettings(false);
-    if (ui->tabWidget->count() == 4) {
+    if (ui->tabWidget->count() == 5) {
       ui->tabWidget->removeTab(2);
       ui->tabWidget->removeTab(1);
       showSingleMotor(true);

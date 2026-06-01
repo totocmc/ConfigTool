@@ -183,6 +183,7 @@ private:
     void hide4wayButtons(bool b);
     void hideESCSettings(bool b);
     void hideEEPROMSettings(bool b);
+    void syncVccVersion4PanelFromBuffer();
     void allup();
     bool connectMotor(uint8_t motor);
     void sendFirstEeprom(uint8_t eeprom_type);

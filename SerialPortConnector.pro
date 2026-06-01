@@ -26,6 +26,7 @@ HEADERS += \
     BF_ROOTLOADER.h \
     bluejaymelody.h \
     defaults.h \
+    eeprom.h \
     fourwayif.h \
     widget.h
 
